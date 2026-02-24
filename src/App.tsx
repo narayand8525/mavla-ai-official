@@ -91,8 +91,7 @@ export default function App() {
     try {
       // Direct API Key - Browser Error avoid karnyasathi
       const apiKey = "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU";
-      const genAI = new GoogleGenAI(apiKey);
-      
+const genAI = new GoogleGenAI({ apiKey: "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU" });      
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
