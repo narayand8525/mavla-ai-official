@@ -97,10 +97,10 @@ const genAI = new GoogleGenAI({ apiKey: "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU
       
       // Connection with direct model name
       const session = await (genAI as any).live.connect({
-        model: "gemini-2.0-flash-exp",
+  model: "gemini-2.5-flash", 
         config: {
-          responseModalities: [Modality.AUDIO],
-          systemInstruction: SYSTEM_INSTRUCTION,
+    responseModalities: [Modality.AUDIO],
+    systemInstruction: SYSTEM_INSTRUCTION,
         },
         callbacks: {
           onopen: () => {
