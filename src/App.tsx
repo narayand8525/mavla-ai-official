@@ -6,19 +6,24 @@
 import { useState, useRef, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import { GoogleGenAI, Modality } from "@google/genai";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 // --- Constants ---
 const IMAGE_URL = "https://i.ibb.co/mrrsKxGF/Gemini-Generated-Image-yqvvreyqvvreyqvv-1.png";
-const LISTENING_VIDEO_URL = "/listening.mp4"; 
-const TALKING_VIDEO_URL = "/talking.mp4";
+const LISTENING_VIDEO_URL = "/listening.mp4"; // public folder madhye asle pahije
+const TALKING_VIDEO_URL = "/talking.mp4";    // public folder madhye asle pahije
 
-// --- System Instruction ---
 const SYSTEM_INSTRUCTION = `
 तू "सक्षम AI मावळा" आहेस.
 तू मराठीत बोलणारा, पुरुष आवाजाचा मावळा आहेस.
 नेहमी "जय शिवराय!" ने सुरुवात कर.
-सोपी, स्पष्ट मराठी वापर.
 सुरुवातीचा परिचय: "जय शिवराय! ही अॅप नारायण दाभाडकर यांनी, सक्षम कॉम्प्युटर्स साठी तयार केली आहे. मी आहे सक्षम AI मावळा."
+तू शिवाजी महाराजांची माहिती आणि प्रश्नमंजूषा घेतोस.
 `;
 
 export default function App() {
@@ -28,19 +33,52 @@ export default function App() {
   
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const audioQueueRef = useRef<Int16Array[]>([]);
+  const nextStartTimeRef = useRef<number>(0);
+
+  // Audio helper
+  const base64ToUint8Array = (base64: string) => {
+    const binaryString = window.atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  };
+
+  const playNextInQueue = useCallback(() => {
+    if (audioQueueRef.current.length === 0 || !audioContextRef.current) return;
+
+    setMediaMode('TALKING');
+    const pcmData = audioQueueRef.current.shift()!;
+    const audioBuffer = audioContextRef.current.createBuffer(1, pcmData.length, 24000);
+    const channelData = audioBuffer.getChannelData(0);
+    for (let i = 0; i < pcmData.length; i++) {
+      channelData[i] = pcmData[i] / 32768.0;
+    }
+
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContextRef.current.destination);
+
+    const startTime = Math.max(audioContextRef.current.currentTime, nextStartTimeRef.current);
+    source.start(startTime);
+    nextStartTimeRef.current = startTime + audioBuffer.duration;
+
+    source.onended = () => {
+      if (audioQueueRef.current.length === 0) {
+        setMediaMode('LISTENING');
+      }
+    };
+  }, []);
 
   const disconnect = useCallback(() => {
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
+    if (sessionRef.current) sessionRef.current.close();
+    if (audioContextRef.current) audioContextRef.current.close();
     setIsConnected(false);
     setIsConnecting(false);
     setMediaMode('IMAGE');
+    audioQueueRef.current = [];
   }, []);
 
   const connect = async () => {
@@ -48,11 +86,11 @@ export default function App() {
     setIsConnecting(true);
 
     try {
-      // थेट API Key टाकली आहे जेणेकरून 'Key not found' एरर येणार नाही
-      const ai = new GoogleGenAI("AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU");
+      // Direct Key for Vercel stability
+      const apiKey = "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU";
+      const ai = new GoogleGenAI(apiKey);
       
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
       const session = await (ai as any).live.connect({
@@ -67,85 +105,68 @@ export default function App() {
             setIsConnecting(false);
             setMediaMode('LISTENING');
           },
-          onmessage: (message: any) => {
+          onmessage: async (message: any) => {
             if (message.serverContent?.modelTurn) {
-              setMediaMode('TALKING');
-            } else if (message.serverContent?.interrupted) {
-              setMediaMode('LISTENING');
+              const parts = message.serverContent.modelTurn.parts;
+              for (const part of parts) {
+                if (part.inlineData) {
+                  const bytes = base64ToUint8Array(part.inlineData.data);
+                  audioQueueRef.current.push(new Int16Array(bytes.buffer));
+                  playNextInQueue();
+                }
+              }
             }
           },
           onclose: () => disconnect(),
           onerror: (e: any) => {
-            console.error("Connection Error:", e);
+            console.error(e);
             disconnect();
           }
         }
       });
-      
       sessionRef.current = session;
     } catch (error) {
-      console.error("Connection error:", error);
+      console.error(error);
       disconnect();
     }
   };
 
   return (
-    <div style={{ height: '100vh', backgroundColor: 'black', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', margin: 0, padding: 0, overflow: 'hidden' }}>
-      
+    <div className="h-screen bg-black flex flex-col items-center justify-center p-0 m-0 overflow-hidden">
       <div 
         onClick={isConnected ? disconnect : connect}
-        style={{ position: 'relative', width: '100%', maxWidth: '450px', height: '100%', cursor: 'pointer', backgroundColor: '#1c1917' }}
+        className={cn(
+          "relative w-full max-w-md h-full bg-stone-900 overflow-hidden shadow-2xl cursor-pointer",
+          isConnected && "ring-inset ring-4 ring-orange-600/20"
+        )}
       >
-        {/* IMAGE STATE */}
-        {mediaMode === 'IMAGE' && (
-          <img src={IMAGE_URL} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Mavla" />
-        )}
+        <div className="absolute inset-0">
+          {mediaMode === 'IMAGE' && (
+            <img src={IMAGE_URL} className="w-full h-full object-cover" alt="Mavla" />
+          )}
+          {mediaMode === 'LISTENING' && (
+            <video src={LISTENING_VIDEO_URL} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+          )}
+          {mediaMode === 'TALKING' && (
+            <video src={TALKING_VIDEO_URL} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+          )}
+        </div>
 
-        {/* LISTENING STATE */}
-        {mediaMode === 'LISTENING' && (
-          <video 
-            src={LISTENING_VIDEO_URL} 
-            autoPlay loop muted playsInline 
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-          />
-        )}
-
-        {/* TALKING STATE */}
-        {mediaMode === 'TALKING' && (
-          <video 
-            src={TALKING_VIDEO_URL} 
-            autoPlay loop muted playsInline 
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-          />
-        )}
-
-        {/* LOADING STATE */}
         {isConnecting && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
-            <Loader2 style={{ color: '#f97316', animation: 'spin 1s linear infinite' }} size={60} />
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
+            <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
           </div>
         )}
 
-        {/* UI FEEDBACK */}
-        <div style={{ position: 'absolute', bottom: '50px', width: '100%', textAlign: 'center', zIndex: 20 }}>
-          <p style={{ 
-            color: 'white', 
-            backgroundColor: isConnected ? '#15803d' : '#ea580c', 
-            padding: '12px 24px', 
-            borderRadius: '30px', 
-            display: 'inline-block', 
-            fontWeight: 'bold',
-            boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-            fontSize: '18px'
-          }}>
-            {isConnected ? "मी ऐकत आहे... बोला" : "मावळ्याशी बोलण्यासाठी क्लिक करा"}
-          </p>
+        <div className="absolute bottom-10 w-full text-center z-30">
+           <span className="bg-orange-600 text-white px-6 py-2 rounded-full font-bold shadow-lg">
+             {isConnected ? "बोला, मी ऐकत आहे..." : "बोलण्यासाठी क्लिक करा"}
+           </span>
         </div>
       </div>
 
-      {/* FOOTER */}
-      <div style={{ position: 'fixed', bottom: '10px', opacity: 0.3, color: 'white', fontSize: '10px', letterSpacing: '2px' }}>
-        SAKSHAM COMPUTERS • NARAYAN DABHADEKAR
+      <div className="fixed bottom-2 text-[10px] text-stone-600 uppercase tracking-widest">
+        Saksham Computers • Narayan Dabhadekar
       </div>
     </div>
   );
