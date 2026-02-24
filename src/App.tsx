@@ -16,16 +16,15 @@ function cn(...inputs: ClassValue[]) {
 
 // --- Constants ---
 const IMAGE_URL = "https://i.ibb.co/mrrsKxGF/Gemini-Generated-Image-yqvvreyqvvreyqvv-1.png";
-const LISTENING_VIDEO_URL = "/listening.mp4"; 
-const TALKING_VIDEO_URL = "/talking.mp4";
+const LISTENING_VIDEO_URL = "https://streamable.com/e/u3f1xf?autoplay=1&muted=1&controls=0&loop=1";
+const TALKING_VIDEO_URL = "https://streamable.com/e/23cpbz?autoplay=1&muted=1&controls=0&loop=1";
 
 const SYSTEM_INSTRUCTION = `
 तू "सक्षम AI मावळा" आहेस.
 तू मराठीत बोलणारा, पुरुष आवाजाचा मावळा आहेस.
 नेहमी "जय शिवराय!" ने सुरुवात कर.
-सोपी, स्पष्ट मराठी वापर.
 सुरुवातीचा परिचय: "जय शिवराय! ही अॅप नारायण दाभाडकर यांनी, सक्षम कॉम्प्युटर्स साठी तयार केली आहे. मी आहे सक्षम AI मावळा."
-तुझे काम शिवाजी महाराजांची माहिती देणे आणि प्रश्नमंजूषा घेणे आहे.
+तू शिवाजी महाराजांची माहिती आणि प्रश्नमंजूषा घेतोस.
 `;
 
 export default function App() {
@@ -38,7 +37,7 @@ export default function App() {
   const audioQueueRef = useRef<Int16Array[]>([]);
   const nextStartTimeRef = useRef<number>(0);
 
-  // Audio utility to handle base64 from Gemini
+  // Audio helper
   const base64ToUint8Array = (base64: string) => {
     const binaryString = window.atob(base64);
     const bytes = new Uint8Array(binaryString.length);
@@ -89,18 +88,22 @@ export default function App() {
     setIsConnecting(true);
 
     try {
-      // Direct API Key - Browser Error avoid karnyasathi
+      // Direct API Key - Browser Error avoid करण्यासाठी
       const apiKey = "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU";
-const genAI = new GoogleGenAI({ apiKey: "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU" });      
+      const genAI = new GoogleGenAI(apiKey);
+      
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Connection with direct model name
+      // Connection with Gemini 2.5 Flash (तुमच्या स्क्रीनशॉट नुसार)
       const session = await (genAI as any).live.connect({
-  model: "gemini-2.5-flash", 
+        model: "gemini-2.5-flash",
         config: {
-    responseModalities: [Modality.AUDIO],
-    systemInstruction: SYSTEM_INSTRUCTION,
+          responseModalities: [Modality.AUDIO],
+          systemInstruction: SYSTEM_INSTRUCTION,
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Fenrir" } },
+          },
         },
         callbacks: {
           onopen: () => {
@@ -119,22 +122,17 @@ const genAI = new GoogleGenAI({ apiKey: "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU
                 }
               }
             }
-            if (message.serverContent?.interrupted) {
-              audioQueueRef.current = [];
-              nextStartTimeRef.current = 0;
-              setMediaMode('LISTENING');
-            }
           },
           onclose: () => disconnect(),
           onerror: (e: any) => {
-            console.error("API Error:", e);
+            console.error(e);
             disconnect();
           }
         }
       });
       sessionRef.current = session;
     } catch (error) {
-      console.error("Connection error:", error);
+      console.error(error);
       disconnect();
     }
   };
@@ -144,40 +142,36 @@ const genAI = new GoogleGenAI({ apiKey: "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU
       <div 
         onClick={isConnected ? disconnect : connect}
         className={cn(
-          "relative w-full max-w-md h-full bg-stone-900 overflow-hidden shadow-2xl cursor-pointer transition-all",
+          "relative w-full max-w-md h-full bg-stone-900 overflow-hidden shadow-2xl cursor-pointer",
           isConnected && "ring-inset ring-4 ring-orange-600/20"
         )}
       >
-        {/* Media Rendering */}
         <div className="absolute inset-0">
           {mediaMode === 'IMAGE' && (
             <img src={IMAGE_URL} className="w-full h-full object-cover" alt="Mavla" />
           )}
           {mediaMode === 'LISTENING' && (
-            <video src={LISTENING_VIDEO_URL} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+            <iframe src={LISTENING_VIDEO_URL} className="absolute inset-0 w-full h-full border-none pointer-events-none" allow="autoplay" />
           )}
           {mediaMode === 'TALKING' && (
-            <video src={TALKING_VIDEO_URL} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+            <iframe src={TALKING_VIDEO_URL} className="absolute inset-0 w-full h-full border-none pointer-events-none" allow="autoplay" />
           )}
         </div>
 
-        {/* Loading Spinner */}
         {isConnecting && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
             <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
           </div>
         )}
 
-        {/* Status Button */}
         <div className="absolute bottom-12 w-full text-center z-30">
-           <span className="bg-orange-600 text-white px-8 py-3 rounded-full font-bold shadow-2xl text-lg animate-pulse">
-             {isConnected ? "मी ऐकत आहे... बोला" : "मावळ्याशी बोलण्यासाठी क्लिक करा"}
+           <span className="bg-orange-600 text-white px-8 py-3 rounded-full font-bold shadow-2xl text-lg">
+             {isConnected ? "मी ऐकत आहे... बोला" : "बोलण्यासाठी क्लिक करा"}
            </span>
         </div>
       </div>
 
-      {/* Footer */}
-      <div className="fixed bottom-2 text-[10px] text-stone-500 uppercase tracking-widest opacity-50">
+      <div className="fixed bottom-2 text-[10px] text-stone-600 uppercase tracking-widest">
         Saksham Computers • Narayan Dabhadekar
       </div>
     </div>
