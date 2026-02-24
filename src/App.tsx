@@ -9,21 +9,23 @@ import { GoogleGenAI, Modality } from "@google/genai";
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
+// Tailwind merge utility
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 // --- Constants ---
 const IMAGE_URL = "https://i.ibb.co/mrrsKxGF/Gemini-Generated-Image-yqvvreyqvvreyqvv-1.png";
-const LISTENING_VIDEO_URL = "/listening.mp4"; // public folder madhye asle pahije
-const TALKING_VIDEO_URL = "/talking.mp4";    // public folder madhye asle pahije
+const LISTENING_VIDEO_URL = "/listening.mp4"; 
+const TALKING_VIDEO_URL = "/talking.mp4";
 
 const SYSTEM_INSTRUCTION = `
 तू "सक्षम AI मावळा" आहेस.
 तू मराठीत बोलणारा, पुरुष आवाजाचा मावळा आहेस.
 नेहमी "जय शिवराय!" ने सुरुवात कर.
+सोपी, स्पष्ट मराठी वापर.
 सुरुवातीचा परिचय: "जय शिवराय! ही अॅप नारायण दाभाडकर यांनी, सक्षम कॉम्प्युटर्स साठी तयार केली आहे. मी आहे सक्षम AI मावळा."
-तू शिवाजी महाराजांची माहिती आणि प्रश्नमंजूषा घेतोस.
+तुझे काम शिवाजी महाराजांची माहिती देणे आणि प्रश्नमंजूषा घेणे आहे.
 `;
 
 export default function App() {
@@ -36,7 +38,7 @@ export default function App() {
   const audioQueueRef = useRef<Int16Array[]>([]);
   const nextStartTimeRef = useRef<number>(0);
 
-  // Audio helper
+  // Audio utility to handle base64 from Gemini
   const base64ToUint8Array = (base64: string) => {
     const binaryString = window.atob(base64);
     const bytes = new Uint8Array(binaryString.length);
@@ -79,6 +81,7 @@ export default function App() {
     setIsConnecting(false);
     setMediaMode('IMAGE');
     audioQueueRef.current = [];
+    nextStartTimeRef.current = 0;
   }, []);
 
   const connect = async () => {
@@ -86,14 +89,15 @@ export default function App() {
     setIsConnecting(true);
 
     try {
-      // Direct Key for Vercel stability
+      // Direct API Key - Browser Error avoid karnyasathi
       const apiKey = "AIzaSyBNyXtg-aoJJPZqNvKqtjNRGr1YUyl-aDU";
-      const ai = new GoogleGenAI(apiKey);
+      const genAI = new GoogleGenAI(apiKey);
       
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      const session = await (ai as any).live.connect({
+      // Connection with direct model name
+      const session = await (genAI as any).live.connect({
         model: "gemini-2.0-flash-exp",
         config: {
           responseModalities: [Modality.AUDIO],
@@ -116,17 +120,22 @@ export default function App() {
                 }
               }
             }
+            if (message.serverContent?.interrupted) {
+              audioQueueRef.current = [];
+              nextStartTimeRef.current = 0;
+              setMediaMode('LISTENING');
+            }
           },
           onclose: () => disconnect(),
           onerror: (e: any) => {
-            console.error(e);
+            console.error("API Error:", e);
             disconnect();
           }
         }
       });
       sessionRef.current = session;
     } catch (error) {
-      console.error(error);
+      console.error("Connection error:", error);
       disconnect();
     }
   };
@@ -136,10 +145,11 @@ export default function App() {
       <div 
         onClick={isConnected ? disconnect : connect}
         className={cn(
-          "relative w-full max-w-md h-full bg-stone-900 overflow-hidden shadow-2xl cursor-pointer",
+          "relative w-full max-w-md h-full bg-stone-900 overflow-hidden shadow-2xl cursor-pointer transition-all",
           isConnected && "ring-inset ring-4 ring-orange-600/20"
         )}
       >
+        {/* Media Rendering */}
         <div className="absolute inset-0">
           {mediaMode === 'IMAGE' && (
             <img src={IMAGE_URL} className="w-full h-full object-cover" alt="Mavla" />
@@ -152,20 +162,23 @@ export default function App() {
           )}
         </div>
 
+        {/* Loading Spinner */}
         {isConnecting && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
             <Loader2 className="w-12 h-12 text-orange-500 animate-spin" />
           </div>
         )}
 
-        <div className="absolute bottom-10 w-full text-center z-30">
-           <span className="bg-orange-600 text-white px-6 py-2 rounded-full font-bold shadow-lg">
-             {isConnected ? "बोला, मी ऐकत आहे..." : "बोलण्यासाठी क्लिक करा"}
+        {/* Status Button */}
+        <div className="absolute bottom-12 w-full text-center z-30">
+           <span className="bg-orange-600 text-white px-8 py-3 rounded-full font-bold shadow-2xl text-lg animate-pulse">
+             {isConnected ? "मी ऐकत आहे... बोला" : "मावळ्याशी बोलण्यासाठी क्लिक करा"}
            </span>
         </div>
       </div>
 
-      <div className="fixed bottom-2 text-[10px] text-stone-600 uppercase tracking-widest">
+      {/* Footer */}
+      <div className="fixed bottom-2 text-[10px] text-stone-500 uppercase tracking-widest opacity-50">
         Saksham Computers • Narayan Dabhadekar
       </div>
     </div>
